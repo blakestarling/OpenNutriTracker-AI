@@ -71,6 +71,8 @@ dependencies:
   sentry_flutter: ^8.14.2
 
   supabase_flutter: ^2.8.2
+  image_picker: ^1.2.0
+  google_generative_ai: ^0.4.7
 
 dev_dependencies:
   flutter_test:

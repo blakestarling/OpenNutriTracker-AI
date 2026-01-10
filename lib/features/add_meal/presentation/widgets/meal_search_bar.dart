@@ -6,6 +6,7 @@ class MealSearchBar extends StatelessWidget {
   final ValueNotifier<String> searchStringListener;
   final Function(String) onSearchSubmit;
   final Function() onBarcodePressed;
+  final Function() onCameraPressed;
 
   final _searchTextController = TextEditingController();
 
@@ -13,7 +14,8 @@ class MealSearchBar extends StatelessWidget {
       {super.key,
       required this.searchStringListener,
       required this.onSearchSubmit,
-      required this.onBarcodePressed});
+      required this.onBarcodePressed,
+      required this.onCameraPressed});
 
   @override
   Widget build(BuildContext context) {
@@ -31,11 +33,20 @@ class MealSearchBar extends StatelessWidget {
               decoration: InputDecoration(
                 hintText: S.of(context).searchLabel,
                 prefixIcon: const Icon(Icons.search_outlined),
-                suffixIcon: IconButton(
-                  icon: const Icon(CustomIcons.barcode_scan),
-                  onPressed: () {
-                    onBarcodePressed();
-                  },
+                suffixIcon: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.camera_alt_outlined),
+                      onPressed: onCameraPressed,
+                    ),
+                    IconButton(
+                      icon: const Icon(CustomIcons.barcode_scan),
+                      onPressed: () {
+                        onBarcodePressed();
+                      },
+                    ),
+                  ],
                 ),
                 filled: true,
                 border: OutlineInputBorder(

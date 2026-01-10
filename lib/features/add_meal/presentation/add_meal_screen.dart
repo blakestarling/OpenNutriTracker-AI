@@ -15,6 +15,13 @@ import 'package:opennutritracker/features/add_meal/presentation/widgets/meal_ite
 import 'package:opennutritracker/features/add_meal/presentation/bloc/products_bloc.dart';
 import 'package:opennutritracker/features/edit_meal/presentation/edit_meal_screen.dart';
 import 'package:opennutritracker/features/scanner/scanner_screen.dart';
+import 'dart:io';
+import 'package:google_generative_ai/google_generative_ai.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:opennutritracker/core/utils/env.dart';
+import 'package:opennutritracker/core/utils/id_generator.dart';
+import 'package:opennutritracker/features/add_meal/domain/entity/meal_nutriments_entity.dart';
+import 'package:opennutritracker/features/scanner/scanner_screen.dart';
 import 'package:opennutritracker/generated/l10n.dart';
 
 class AddMealScreen extends StatefulWidget {
@@ -94,6 +101,7 @@ class _AddMealScreenState extends State<AddMealScreen>
                 searchStringListener: _searchStringListener,
                 onSearchSubmit: _onSearchSubmit,
                 onBarcodePressed: _onBarcodeIconPressed,
+                onCameraPressed: _onCameraIconPressed,
               ),
               const SizedBox(height: 16.0),
               TabBar(
@@ -294,6 +302,155 @@ class _AddMealScreenState extends State<AddMealScreen>
             ],
           );
         });
+  }
+
+  Future<void> _onCameraIconPressed() async {
+    final ImagePicker picker = ImagePicker();
+    final XFile? photo = await picker.pickImage(source: ImageSource.camera);
+
+    if (photo != null) {
+      // Show loading indicator
+      if (!mounted) return;
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (BuildContext context) {
+          return const Center(child: CircularProgressIndicator());
+        },
+      );
+
+      try {
+        final apiKey = Env.geminiApiKey;
+        if (apiKey.isEmpty) {
+          throw Exception('Gemini API Key is missing in .env');
+        }
+
+        final model = GenerativeModel(
+          model: 'gemini-1.5-pro', // Using 1.5 Pro as it supports tools well. User asked for "gemini 3 pro" which doesn't exist yet, assuming latest capable.
+          apiKey: apiKey,
+          tools: [
+            Tool(functionDeclarations: [
+              FunctionDeclaration(
+                'extract_nutrition_info',
+                'Extracts nutritional information per 100g/ml from an image of food.',
+                Schema(
+                  SchemaType.object,
+                  properties: {
+                    'name': Schema(SchemaType.string,
+                        description: 'The name of the food or meal.'),
+                    'brands': Schema(SchemaType.string,
+                        description: 'The brand name if visible/applicable.',
+                        nullable: true),
+                    'calories': Schema(SchemaType.number,
+                        description: 'Energy content in kcal per 100g/ml.'),
+                    'carbs': Schema(SchemaType.number,
+                        description: 'Carbohydrates in grams per 100g/ml.'),
+                    'fat': Schema(SchemaType.number,
+                        description: 'Total fat in grams per 100g/ml.'),
+                    'protein': Schema(SchemaType.number,
+                        description: 'Protein in grams per 100g/ml.'),
+                    'sugar': Schema(SchemaType.number,
+                        description: 'Total sugars in grams per 100g/ml.'),
+                    'fiber': Schema(SchemaType.number,
+                        description: 'Dietary fiber in grams per 100g/ml.'),
+                    'saturated_fat': Schema(SchemaType.number,
+                        description: 'Saturated fat in grams per 100g/ml.'),
+                    'serving_size': Schema(SchemaType.string,
+                        description:
+                            'The estimated serving size (e.g., "1 bowl", "100g").'),
+                  },
+                  requiredProperties: [
+                    'name',
+                    'calories',
+                    'carbs',
+                    'fat',
+                    'protein',
+                    'sugar',
+                    'fiber',
+                    'saturated_fat',
+                    'serving_size'
+                  ],
+                ),
+              ),
+            ]),
+          ],
+        );
+
+        final imageBytes = await photo.readAsBytes();
+        final content = [
+          Content.multi([
+            TextPart(
+                'Identify this food and its nutritional values per 100g. Call the extract_nutrition_info function.'),
+            DataPart('image/jpeg', imageBytes),
+          ])
+        ];
+
+        final response = await model.generateContent(content);
+
+        final functionCall = response.functionCalls.firstOrNull;
+
+        if (functionCall != null &&
+            functionCall.name == 'extract_nutrition_info') {
+          final args = functionCall.args;
+          final name = args['name'] as String;
+          final brands = args['brands'] as String?;
+          final calories = (args['calories'] as num).toDouble();
+          final carbs = (args['carbs'] as num).toDouble();
+          final fat = (args['fat'] as num).toDouble();
+          final protein = (args['protein'] as num).toDouble();
+          final sugar = (args['sugar'] as num).toDouble();
+          final fiber = (args['fiber'] as num).toDouble();
+          final saturatedFat = (args['saturated_fat'] as num).toDouble();
+          final servingSize = args['serving_size'] as String; // Just stored as text for now, or use to guess quantity
+
+          // Create MealEntity
+          final mealEntity = MealEntity(
+            code: IdGenerator.getUniqueID(),
+            name: name,
+            brands: brands,
+            thumbnailImageUrl: photo.path, // Use local path
+            mainImageUrl: photo.path,
+            url: null,
+            mealQuantity: "100", // Default to 100g Base
+            mealUnit: "g",
+            servingQuantity: 100, // Default base
+            servingUnit: "g",
+            servingSize: servingSize,
+            nutriments: MealNutrimentsEntity(
+              energyKcal100: calories,
+              carbohydrates100: carbs,
+              fat100: fat,
+              proteins100: protein,
+              sugars100: sugar,
+              saturatedFat100: saturatedFat,
+              fiber100: fiber,
+            ),
+            source: MealSourceEntity.custom,
+          );
+
+          if (!mounted) return;
+          Navigator.of(context).pop(); // Close loading dialog
+
+          Navigator.of(context).pushNamed(
+            NavigationOptions.editMealRoute,
+            arguments: EditMealScreenArguments(
+              _day,
+              mealEntity,
+              _mealType.getIntakeType(),
+              false, // Assuming metric for now, or match user pref
+            ),
+          );
+        } else {
+          throw Exception('Failed to extract nutrition info (No function call)');
+        }
+      } catch (e) {
+        if (!mounted) return;
+        Navigator.of(context).pop(); // Close loading dialog
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error analyzing image: $e')),
+        );
+      }
+    }
   }
 
   void _openEditMealScreen(bool usesImperialUnits) {

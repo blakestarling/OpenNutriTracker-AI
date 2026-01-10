@@ -326,7 +326,7 @@ class _AddMealScreenState extends State<AddMealScreen>
         }
 
         final model = GenerativeModel(
-          model: 'gemini-1.5-pro', // Using 1.5 Pro as it supports tools well. User asked for "gemini 3 pro" which doesn't exist yet, assuming latest capable.
+          model: 'gemini-3-pro-preview',
           apiKey: apiKey,
           tools: [
             Tool(functionDeclarations: [
@@ -401,7 +401,8 @@ class _AddMealScreenState extends State<AddMealScreen>
           final sugar = (args['sugar'] as num).toDouble();
           final fiber = (args['fiber'] as num).toDouble();
           final saturatedFat = (args['saturated_fat'] as num).toDouble();
-          final servingSize = args['serving_size'] as String; // Just stored as text for now, or use to guess quantity
+          final servingSize = args['serving_size']
+              as String; // Just stored as text for now, or use to guess quantity
 
           // Create MealEntity
           final mealEntity = MealEntity(
@@ -441,7 +442,8 @@ class _AddMealScreenState extends State<AddMealScreen>
             ),
           );
         } else {
-          throw Exception('Failed to extract nutrition info (No function call)');
+          throw Exception(
+              'Failed to extract nutrition info (No function call)');
         }
       } catch (e) {
         if (!mounted) return;

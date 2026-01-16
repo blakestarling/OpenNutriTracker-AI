@@ -23,6 +23,7 @@ import 'package:opennutritracker/core/utils/id_generator.dart';
 import 'package:opennutritracker/features/add_meal/domain/entity/meal_nutriments_entity.dart';
 import 'package:opennutritracker/features/scanner/scanner_screen.dart';
 import 'package:opennutritracker/generated/l10n.dart';
+import 'package:opennutritracker/features/add_meal/presentation/widgets/image_note_dialog.dart';
 
 class AddMealScreen extends StatefulWidget {
   const AddMealScreen({super.key});
@@ -309,150 +310,225 @@ class _AddMealScreenState extends State<AddMealScreen>
     final XFile? photo = await picker.pickImage(source: ImageSource.camera);
 
     if (photo != null) {
-      // Show loading indicator
       if (!mounted) return;
-      showDialog(
+
+      // Ask for optional note
+      await showDialog(
         context: context,
-        barrierDismissible: false,
-        builder: (BuildContext context) {
-          return const Center(child: CircularProgressIndicator());
-        },
+        builder: (context) => ImageNoteDialog(
+          imageFile: photo,
+          onAnalyze: (note) async {
+            Navigator.of(context).pop(); // Close dialog
+            await _analyzeImage(photo, note);
+          },
+        ),
+      );
+    }
+  }
+
+  Future<void> _analyzeImage(XFile photo, String? note) async {
+    // Show loading indicator
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return const Center(child: CircularProgressIndicator());
+      },
+    );
+
+    try {
+      final apiKey = Env.geminiApiKey;
+      if (apiKey.isEmpty) {
+        throw Exception('Gemini API Key is missing in .env');
+      }
+
+      final model = GenerativeModel(
+        model: 'gemini-3-flash-preview',
+        apiKey: apiKey,
+        tools: [
+          Tool(functionDeclarations: [
+            FunctionDeclaration(
+              'extract_nutrition_info',
+              'Extracts nutritional information per 100g/ml from an image of food.',
+              Schema(
+                SchemaType.object,
+                properties: {
+                  'name': Schema(SchemaType.string,
+                      description: 'The name of the food or meal.'),
+                  'brands': Schema(SchemaType.string,
+                      description: 'The brand name if visible/applicable.',
+                      nullable: true),
+                  'calories': Schema(SchemaType.number,
+                      description: 'Energy content in kcal per 100g/ml.'),
+                  'carbs': Schema(SchemaType.number,
+                      description: 'Carbohydrates in grams per 100g/ml.'),
+                  'fat': Schema(SchemaType.number,
+                      description: 'Total fat in grams per 100g/ml.'),
+                  'protein': Schema(SchemaType.number,
+                      description: 'Protein in grams per 100g/ml.'),
+                  'sugar': Schema(SchemaType.number,
+                      description: 'Total sugars in grams per 100g/ml.'),
+                  'fiber': Schema(SchemaType.number,
+                      description: 'Dietary fiber in grams per 100g/ml.'),
+                  'saturated_fat': Schema(SchemaType.number,
+                      description: 'Saturated fat in grams per 100g/ml.'),
+                  'serving_size': Schema(SchemaType.string,
+                      description:
+                          'The estimated serving size in g/ml (e.g., 250g).'),
+                },
+                requiredProperties: [
+                  'name',
+                  'calories',
+                  'carbs',
+                  'fat',
+                  'protein',
+                  'sugar',
+                  'fiber',
+                  'saturated_fat',
+                  'serving_size'
+                ],
+              ),
+            ),
+          ]),
+        ],
       );
 
-      try {
-        final apiKey = Env.geminiApiKey;
-        if (apiKey.isEmpty) {
-          throw Exception('Gemini API Key is missing in .env');
-        }
+      final imageBytes = await photo.readAsBytes();
+      String promptText =
+          'Identify this food and its nutritional values per 100g. Call the extract_nutrition_info function.';
+      if (note != null && note.isNotEmpty) {
+        promptText += ' User note: "$note".';
+      }
 
-        final model = GenerativeModel(
-          model: 'gemini-3-pro-preview',
-          apiKey: apiKey,
-          tools: [
-            Tool(functionDeclarations: [
-              FunctionDeclaration(
-                'extract_nutrition_info',
-                'Extracts nutritional information per 100g/ml from an image of food.',
-                Schema(
-                  SchemaType.object,
-                  properties: {
-                    'name': Schema(SchemaType.string,
-                        description: 'The name of the food or meal.'),
-                    'brands': Schema(SchemaType.string,
-                        description: 'The brand name if visible/applicable.',
-                        nullable: true),
-                    'calories': Schema(SchemaType.number,
-                        description: 'Energy content in kcal per 100g/ml.'),
-                    'carbs': Schema(SchemaType.number,
-                        description: 'Carbohydrates in grams per 100g/ml.'),
-                    'fat': Schema(SchemaType.number,
-                        description: 'Total fat in grams per 100g/ml.'),
-                    'protein': Schema(SchemaType.number,
-                        description: 'Protein in grams per 100g/ml.'),
-                    'sugar': Schema(SchemaType.number,
-                        description: 'Total sugars in grams per 100g/ml.'),
-                    'fiber': Schema(SchemaType.number,
-                        description: 'Dietary fiber in grams per 100g/ml.'),
-                    'saturated_fat': Schema(SchemaType.number,
-                        description: 'Saturated fat in grams per 100g/ml.'),
-                    'serving_size': Schema(SchemaType.string,
-                        description:
-                            'The estimated serving size (e.g., "1 bowl", "100g").'),
-                  },
-                  requiredProperties: [
-                    'name',
-                    'calories',
-                    'carbs',
-                    'fat',
-                    'protein',
-                    'sugar',
-                    'fiber',
-                    'saturated_fat',
-                    'serving_size'
-                  ],
-                ),
-              ),
-            ]),
-          ],
+      final content = [
+        Content.multi([
+          TextPart(promptText),
+          DataPart('image/jpeg', imageBytes),
+        ])
+      ];
+
+      final response = await model.generateContent(content);
+
+      final functionCall = response.functionCalls.firstOrNull;
+
+      if (functionCall != null &&
+          functionCall.name == 'extract_nutrition_info') {
+        final args = functionCall.args;
+        final name = args['name'] as String;
+        final brands = args['brands'] as String?;
+        final calories = (args['calories'] as num).toDouble();
+        final carbs = (args['carbs'] as num).toDouble();
+        final fat = (args['fat'] as num).toDouble();
+        final protein = (args['protein'] as num).toDouble();
+        final sugar = (args['sugar'] as num).toDouble();
+        final fiber = (args['fiber'] as num).toDouble();
+        final saturatedFat = (args['saturated_fat'] as num).toDouble();
+        final servingSizeString = args['serving_size'] as String;
+
+        // Propagate serving size
+        final parsedServing = _parseServingSize(servingSizeString);
+        final double mealQuantityVal = parsedServing.value;
+        final String mealUnitVal = parsedServing.unit;
+
+        // Create MealEntity
+        final mealEntity = MealEntity(
+          code: IdGenerator.getUniqueID(),
+          name: name,
+          brands: brands,
+          thumbnailImageUrl: photo.path, // Use local path
+          mainImageUrl: photo.path,
+          url: null,
+          mealQuantity:
+              mealQuantityVal.toString(), // Propagated from serving size
+          mealUnit: mealUnitVal,
+          servingQuantity: mealQuantityVal,
+          servingUnit: mealUnitVal,
+          servingSize: "", // Explicitly empty to avoid duplicate serving option
+          nutriments: MealNutrimentsEntity(
+            energyKcal100: calories,
+            carbohydrates100: carbs,
+            fat100: fat,
+            proteins100: protein,
+            sugars100: sugar,
+            saturatedFat100: saturatedFat,
+            fiber100: fiber,
+          ),
+          source: MealSourceEntity.custom,
         );
 
-        final imageBytes = await photo.readAsBytes();
-        final content = [
-          Content.multi([
-            TextPart(
-                'Identify this food and its nutritional values per 100g. Call the extract_nutrition_info function.'),
-            DataPart('image/jpeg', imageBytes),
-          ])
-        ];
-
-        final response = await model.generateContent(content);
-
-        final functionCall = response.functionCalls.firstOrNull;
-
-        if (functionCall != null &&
-            functionCall.name == 'extract_nutrition_info') {
-          final args = functionCall.args;
-          final name = args['name'] as String;
-          final brands = args['brands'] as String?;
-          final calories = (args['calories'] as num).toDouble();
-          final carbs = (args['carbs'] as num).toDouble();
-          final fat = (args['fat'] as num).toDouble();
-          final protein = (args['protein'] as num).toDouble();
-          final sugar = (args['sugar'] as num).toDouble();
-          final fiber = (args['fiber'] as num).toDouble();
-          final saturatedFat = (args['saturated_fat'] as num).toDouble();
-          final servingSize = args['serving_size']
-              as String; // Just stored as text for now, or use to guess quantity
-
-          // Create MealEntity
-          final mealEntity = MealEntity(
-            code: IdGenerator.getUniqueID(),
-            name: name,
-            brands: brands,
-            thumbnailImageUrl: photo.path, // Use local path
-            mainImageUrl: photo.path,
-            url: null,
-            mealQuantity: "100", // Default to 100g Base
-            mealUnit: "g",
-            servingQuantity: 100, // Default base
-            servingUnit: "g",
-            servingSize: servingSize,
-            nutriments: MealNutrimentsEntity(
-              energyKcal100: calories,
-              carbohydrates100: carbs,
-              fat100: fat,
-              proteins100: protein,
-              sugars100: sugar,
-              saturatedFat100: saturatedFat,
-              fiber100: fiber,
-            ),
-            source: MealSourceEntity.custom,
-          );
-
-          if (!mounted) return;
-          Navigator.of(context).pop(); // Close loading dialog
-
-          Navigator.of(context).pushNamed(
-            NavigationOptions.editMealRoute,
-            arguments: EditMealScreenArguments(
-              _day,
-              mealEntity,
-              _mealType.getIntakeType(),
-              false, // Assuming metric for now, or match user pref
-            ),
-          );
-        } else {
-          throw Exception(
-              'Failed to extract nutrition info (No function call)');
-        }
-      } catch (e) {
         if (!mounted) return;
         Navigator.of(context).pop(); // Close loading dialog
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error analyzing image: $e')),
+
+        Navigator.of(context).pushNamed(
+          NavigationOptions.editMealRoute,
+          arguments: EditMealScreenArguments(
+            _day,
+            mealEntity,
+            _mealType.getIntakeType(),
+            false, // Assuming metric for now, or match user pref
+          ),
         );
+      } else {
+        throw Exception('Failed to extract nutrition info (No function call)');
+      }
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.of(context).pop(); // Close loading dialog
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error analyzing image: $e')),
+      );
+    }
+  }
+
+  ({double value, String unit}) _parseServingSize(String servingSize) {
+    // Basic parsing logic.
+    // Expected formats: "200g", "200 g", "330ml", "1.5L", etc.
+    final lower = servingSize.toLowerCase().trim();
+    double value = 100.0; // Default
+    String unit = 'g'; // Default
+
+    final regex = RegExp(r'([\d\.]+)\s*([a-z]+)');
+    final match = regex.firstMatch(lower);
+
+    if (match != null) {
+      value = double.tryParse(match.group(1) ?? '100') ?? 100.0;
+      final unitStr = match.group(2) ?? 'g';
+
+      if (unitStr.contains('kg')) {
+        value *= 1000;
+        unit = 'g';
+      } else if (unitStr.contains('mg')) {
+        value /= 1000;
+        unit = 'g';
+      } else if (unitStr.contains('l') &&
+          !unitStr.contains('m') &&
+          !unitStr.contains('d') &&
+          !unitStr.contains('c')) {
+        // Liters
+        if (unitStr == 'l' || unitStr == 'liter' || unitStr == 'liters') {
+          value *= 1000;
+          unit = 'ml';
+        }
+      } else if (unitStr.contains('oz')) {
+        if (unitStr.contains('fl')) {
+          value *= 29.5735;
+          unit = 'ml';
+        } else {
+          value *= 28.3495;
+          unit = 'g';
+        }
+      } else {
+        // Assume standard g or ml
+        if (unitStr.contains('m') && unitStr.contains('l')) {
+          unit = 'ml';
+        } else {
+          unit = 'g';
+        }
       }
     }
+
+    return (value: value, unit: unit);
   }
 
   void _openEditMealScreen(bool usesImperialUnits) {

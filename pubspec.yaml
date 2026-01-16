@@ -73,6 +73,7 @@ dependencies:
   supabase_flutter: ^2.8.2
   image_picker: ^1.2.0
   google_generative_ai: ^0.4.7
+  flutter_image_compress: ^2.4.0
 
 dev_dependencies:
   flutter_test:

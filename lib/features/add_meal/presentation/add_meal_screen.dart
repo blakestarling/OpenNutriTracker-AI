@@ -21,9 +21,10 @@ import 'package:image_picker/image_picker.dart';
 import 'package:opennutritracker/core/utils/env.dart';
 import 'package:opennutritracker/core/utils/id_generator.dart';
 import 'package:opennutritracker/features/add_meal/domain/entity/meal_nutriments_entity.dart';
-import 'package:opennutritracker/features/scanner/scanner_screen.dart';
 import 'package:opennutritracker/generated/l10n.dart';
 import 'package:opennutritracker/features/add_meal/presentation/widgets/image_note_dialog.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
 
 class AddMealScreen extends StatefulWidget {
   const AddMealScreen({super.key});
@@ -431,20 +432,43 @@ class _AddMealScreenState extends State<AddMealScreen>
         final double mealQuantityVal = parsedServing.value;
         final String mealUnitVal = parsedServing.unit;
 
+        // Compress and Save Image Locally
+        String finalImagePath = photo.path; // Fallback
+        try {
+          final dir = await getApplicationDocumentsDirectory();
+          final timestamp = DateTime.now().millisecondsSinceEpoch;
+          final targetPath = '${dir.path}/meal_$timestamp.jpg';
+
+          final XFile? compressedFile =
+              await FlutterImageCompress.compressAndGetFile(
+            photo.path,
+            targetPath,
+            quality: 10, // Significantly lower quality to save space
+            minWidth: 400, // Reduced resolution
+            minHeight: 400,
+          );
+
+          if (compressedFile != null) {
+            finalImagePath = compressedFile.path;
+          }
+        } catch (e) {
+          debugPrint('Image compression failed, using original: $e');
+        }
+
         // Create MealEntity
         final mealEntity = MealEntity(
           code: IdGenerator.getUniqueID(),
           name: name,
           brands: brands,
-          thumbnailImageUrl: photo.path, // Use local path
-          mainImageUrl: photo.path,
+          thumbnailImageUrl: finalImagePath, // Persistent local path
+          mainImageUrl: finalImagePath,
           url: null,
           mealQuantity:
               mealQuantityVal.toString(), // Propagated from serving size
           mealUnit: mealUnitVal,
           servingQuantity: mealQuantityVal,
           servingUnit: mealUnitVal,
-          servingSize: "", // Explicitly empty to avoid duplicate serving option
+          servingSize: "", // Explicitly empty
           nutriments: MealNutrimentsEntity(
             energyKcal100: calories,
             carbohydrates100: carbs,

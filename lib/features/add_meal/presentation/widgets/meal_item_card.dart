@@ -1,13 +1,11 @@
 import 'package:auto_size_text/auto_size_text.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:opennutritracker/core/presentation/widgets/meal_value_unit_text.dart';
-import 'package:opennutritracker/core/utils/locator.dart';
 import 'package:opennutritracker/core/utils/navigation_options.dart';
 import 'package:opennutritracker/features/add_meal/domain/entity/meal_entity.dart';
 import 'package:opennutritracker/features/add_meal/presentation/add_meal_type.dart';
 import 'package:opennutritracker/features/meal_detail/meal_detail_screen.dart';
+import 'package:opennutritracker/core/presentation/widgets/universal_meal_image.dart';
 
 class MealItemCard extends StatelessWidget {
   final DateTime day;
@@ -38,12 +36,11 @@ class MealItemCard extends StatelessWidget {
             leading: mealEntity.thumbnailImageUrl != null
                 ? ClipRRect(
                     borderRadius: BorderRadius.circular(16),
-                    child: CachedNetworkImage(
-                      cacheManager: locator<CacheManager>(),
+                    child: UniversalMealImage(
                       fit: BoxFit.cover,
                       width: 60,
                       height: 60,
-                      imageUrl: mealEntity.thumbnailImageUrl ?? "",
+                      imageUrl: mealEntity.thumbnailImageUrl,
                     ))
                 : ClipRRect(
                     borderRadius: BorderRadius.circular(16),

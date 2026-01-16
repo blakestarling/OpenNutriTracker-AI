@@ -1,7 +1,6 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:opennutritracker/core/presentation/widgets/universal_meal_image.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:logging/logging.dart';
 import 'package:opennutritracker/core/domain/entity/intake_type_entity.dart';
 import 'package:opennutritracker/core/utils/calc/unit_calc.dart';
@@ -11,7 +10,6 @@ import 'package:opennutritracker/core/utils/locator.dart';
 import 'package:opennutritracker/core/utils/navigation_options.dart';
 import 'package:opennutritracker/features/add_meal/domain/entity/meal_entity.dart';
 import 'package:opennutritracker/features/edit_meal/presentation/bloc/edit_meal_bloc.dart';
-import 'package:opennutritracker/features/edit_meal/presentation/widgets/default_meal_image.dart';
 import 'package:opennutritracker/features/meal_detail/meal_detail_screen.dart';
 import 'package:opennutritracker/generated/l10n.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
@@ -158,15 +156,11 @@ class _EditMealScreenState extends State<EditMealScreen> {
       children: [
         Center(
             child: ClipOval(
-          child: CachedNetworkImage(
-            cacheManager: locator<CacheManager>(),
+          child: UniversalMealImage(
             width: 120,
             height: 120,
-            placeholder: (context, string) => const DefaultMealImage(),
-            errorWidget: (context, exception, stacktrace) =>
-                const DefaultMealImage(),
             fit: BoxFit.cover,
-            imageUrl: _mealEntity.mainImageUrl ?? "",
+            imageUrl: _mealEntity.mainImageUrl,
           ),
         )),
         const SizedBox(height: 32),

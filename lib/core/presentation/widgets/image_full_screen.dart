@@ -1,11 +1,7 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_cache_manager/flutter_cache_manager.dart';
-import 'package:opennutritracker/core/utils/locator.dart';
-import 'package:opennutritracker/features/meal_detail/presentation/widgets/meal_placeholder.dart';
+import 'package:opennutritracker/core/presentation/widgets/universal_meal_image.dart';
 
 class ImageFullScreen extends StatefulWidget {
-
   static const fullScreenHeroTag = 'fullScreenTag';
 
   const ImageFullScreen({super.key});
@@ -36,14 +32,11 @@ class _ImageFullScreenState extends State<ImageFullScreen> {
       body: InteractiveViewer(
         child: Hero(
           tag: ImageFullScreen.fullScreenHeroTag,
-          child: CachedNetworkImage(
+          child: UniversalMealImage(
             width: double.infinity,
             height: double.infinity,
-            cacheManager: locator<CacheManager>(),
             imageUrl: imageUrl,
             fit: BoxFit.cover,
-            placeholder: (context, string) => const MealPlaceholder(),
-            errorWidget: (context, url, error) => const MealPlaceholder(),
           ),
         ),
       ),

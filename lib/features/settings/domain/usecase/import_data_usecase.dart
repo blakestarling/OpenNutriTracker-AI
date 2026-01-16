@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:archive/archive.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:opennutritracker/core/data/data_source/user_activity_dbo.dart';
 import 'package:opennutritracker/core/data/dbo/intake_dbo.dart';
 import 'package:opennutritracker/core/data/dbo/tracked_day_dbo.dart';
@@ -56,12 +57,47 @@ class ImportDataUsecase {
       throw Exception('User activity file not found in the archive');
     }
 
-    // Extract and process intake data
+    // Extract and process images and update intake JSON
+    final appDocDir = await getApplicationDocumentsDirectory();
     final intakeFile = archive.findFile(userIntakeJsonFileName);
+
     if (intakeFile != null) {
+      // First, extract all images
+      for (final file in archive) {
+        if (file.isFile && file.name.startsWith('images/')) {
+          final fileName = file.name.split('/').last;
+          if (fileName.isNotEmpty) {
+            final outFile = File('${appDocDir.path}/$fileName');
+            await outFile.create(recursive: true);
+            await outFile.writeAsBytes(file.content as List<int>);
+          }
+        }
+      }
+
       final intakeJsonString = utf8.decode(intakeFile.content as List<int>);
       final intakeList =
           (jsonDecode(intakeJsonString) as List).cast<Map<String, dynamic>>();
+
+      // Update image paths in JSON to absolute paths
+      for (var intakeMap in intakeList) {
+        if (intakeMap['meal'] != null) {
+          var mealMap = intakeMap['meal'] as Map<String, dynamic>;
+
+          void updatePath(String key) {
+            if (mealMap[key] != null) {
+              String path = mealMap[key];
+              if (path.startsWith('images/')) {
+                final filename = path.split('/').last;
+                mealMap[key] = '${appDocDir.path}/$filename';
+              }
+            }
+          }
+
+          updatePath('mainImageUrl');
+          updatePath('thumbnailImageUrl');
+          intakeMap['meal'] = mealMap;
+        }
+      }
 
       final intakeDBOs =
           intakeList.map((json) => IntakeDBO.fromJson(json)).toList();
